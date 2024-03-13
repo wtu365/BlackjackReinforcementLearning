@@ -28,7 +28,7 @@ class Hand:
 def Qstart():
     return {"hit": 0, "stand": 0}
 
-class BlackjackRLAgent():
+class BlackjackRLAgent:
     def __init__(
             self,
             learning_rate,
@@ -45,7 +45,7 @@ class BlackjackRLAgent():
 
         self.q_table = defaultdict(Qstart)
 
-    def getAction(self, obs):
+    def getAction(self, obs: tuple[int, int, bool]):
         if np.random.random() < self.epsilon:
             return random.choice(self.q_table[obs].keys())
         else:
@@ -70,7 +70,7 @@ class BlackjackRLAgent():
     def decay_epsilon(self):
         self.epsilon = max(self.epsilon - self.epsilon_decay, self.final_epsilon)
 
-def start_episode(agent):
+def start_episode(agent: BlackjackRLAgent):
     deck = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
     agent_hand = Hand()
     dealer_hand = Hand()
@@ -83,7 +83,32 @@ def start_episode(agent):
         dealer_hand.addCard(random_card)
 
     agent_count = agent_hand.count
-    dealer_card = int(dealer_hand.cards[1])
+    dealer_card = dealer_hand.cards[1]
+    hasAce = (agent_hand.aces > 0) 
+
+    if dealer_card == 'A':
+        dealer_card = 11
+    elif dealer_card == 'J' or dealer_card == 'Q' or dealer_card == 'K':
+        dealer_card = 10
+    else:
+        dealer_card = int(dealer_card)
+
+    cur_obs = (agent_count, dealer_card, hasAce)
+    done = False
+    while not done:
+        action = agent.getAction(cur_obs)
+        match action:
+            case "hit":
+                random_card = random.choice(deck)
+                agent_hand.addCard(random_card)
+                agent_count = agent_hand.count
+                hasAce = (agent_hand.aces > 0) 
+                next_obs = (agent_count, dealer_card, hasAce)
+                if agent_hand.count > 21: 
+                    done = True
+                    reward = -1
+            case "stand":
+                done = True
 
 def play_blackjack():
     deck = {'A':4, '2':4, '3':4, '4':4, '5':4, '6':4, '7':4, '8':4, '9':4, '10':4, 'J':4, 'Q':4, 'K':4}
@@ -137,7 +162,7 @@ def play_blackjack():
         if (player.count > 21):
             print("Sorry! Your hand is over 21 and has busted.")
             return
-    while (dealer.count < 17):
+    while (dealer.count < 17 or (dealer.count == 17 and dealer.aces > 0)):
         random_card = random.choice(list(deck.keys()))
         dealer.addCard(random_card)
         deck[random_card] -= 1
