@@ -47,7 +47,7 @@ class BlackjackRLAgent:
 
     def getAction(self, obs: tuple[int, int, bool]):
         if np.random.random() < self.epsilon:
-            return random.choice(self.q_table[obs].keys())
+            return np.random.choice(list(self.q_table[obs].keys()))
         else:
             maxQValue = float('-inf')
             retAction = None
@@ -62,10 +62,12 @@ class BlackjackRLAgent:
         for act in self.q_table[next_obs]:
             if self.q_table[next_obs][act] > maxQValue:
                 maxQValue = self.q_table[next_obs][act]
-        futureQvalue = not isDone * maxQValue
+        futureQvalue = int(not isDone) * maxQValue
         sample = reward + self.discount * futureQvalue
-
+        print("sample: ", sample)
+        print("Before update: ", self.q_table[obs][action])
         self.q_table[obs][action] = (1 - self.learning_rate) * self.q_table[obs][action] + self.learning_rate * sample
+        print("After update: ", self.q_table[obs][action])
 
     def decay_epsilon(self):
         self.epsilon = max(self.epsilon - self.epsilon_decay, self.final_epsilon)
@@ -76,10 +78,10 @@ def start_episode(agent: BlackjackRLAgent):
     dealer_hand = Hand()
 
     for i in range(2):
-        random_card = random.choice(deck)
+        random_card = np.random.choice(deck)
         agent_hand.addCard(random_card)
     for i in range(2):
-        random_card = random.choice(deck)
+        random_card = np.random.choice(deck)
         dealer_hand.addCard(random_card)
 
     agent_count = agent_hand.count
@@ -94,21 +96,39 @@ def start_episode(agent: BlackjackRLAgent):
         dealer_card = int(dealer_card)
 
     cur_obs = (agent_count, dealer_card, hasAce)
+    print(cur_obs)
     done = False
     while not done:
         action = agent.getAction(cur_obs)
         match action:
             case "hit":
-                random_card = random.choice(deck)
+                random_card = np.random.choice(deck)
                 agent_hand.addCard(random_card)
                 agent_count = agent_hand.count
                 hasAce = (agent_hand.aces > 0) 
                 next_obs = (agent_count, dealer_card, hasAce)
+                print("Hit: ", next_obs)
                 if agent_hand.count > 21: 
                     done = True
-                    reward = -1
+                    reward = -2
+                else:
+                    reward = 0
+                agent.update(cur_obs, action, next_obs, reward, done)
+                cur_obs = next_obs
             case "stand":
                 done = True
+                print("Stand: ", cur_obs)
+                while (dealer_hand.count < 17 or (dealer_hand.count == 17 and dealer_hand.aces > 0)):
+                    random_card = np.random.choice(deck)
+                    dealer_hand.addCard(random_card)
+                if (dealer_hand.count > 21 or dealer_hand.count < agent_hand.count):
+                    reward = 2
+                elif (dealer_hand.count > agent_hand.count):
+                    reward = -2
+                else:
+                    reward = 0
+                agent.update(cur_obs, action, cur_obs, reward, done)
+    agent.decay_epsilon()
 
 def play_blackjack():
     deck = {'A':4, '2':4, '3':4, '4':4, '5':4, '6':4, '7':4, '8':4, '9':4, '10':4, 'J':4, 'Q':4, 'K':4}
@@ -196,7 +216,7 @@ if __name__ == "__main__":
 
     agent = BlackjackRLAgent(learning_rate, epsilon_start, epsilon_decay, final_epsilon, discount)
 
-    for episode in tqdm(range(num_episodes)):
-        start_episode(agent)
+    #for episode in tqdm(range(num_episodes)):
+    start_episode(agent)
 
     print("Finished training!")
