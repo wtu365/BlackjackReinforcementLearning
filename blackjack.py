@@ -2,6 +2,7 @@ from collections import defaultdict
 import numpy as np
 import random
 from tqdm import tqdm
+import matplotlib as plt
 
 class Hand:
     def __init__(self):
@@ -64,10 +65,10 @@ class BlackjackRLAgent:
                 maxQValue = self.q_table[next_obs][act]
         futureQvalue = int(not isDone) * maxQValue
         sample = reward + self.discount * futureQvalue
-        print("sample: ", sample)
-        print("Before update: ", self.q_table[obs][action])
+        #print("sample: ", sample)
+        #print("Before update: ", self.q_table[obs][action])
         self.q_table[obs][action] = (1 - self.learning_rate) * self.q_table[obs][action] + self.learning_rate * sample
-        print("After update: ", self.q_table[obs][action])
+        #print("After update: ", self.q_table[obs][action])
 
     def decay_epsilon(self):
         self.epsilon = max(self.epsilon - self.epsilon_decay, self.final_epsilon)
@@ -96,7 +97,7 @@ def start_episode(agent: BlackjackRLAgent):
         dealer_card = int(dealer_card)
 
     cur_obs = (agent_count, dealer_card, hasAce)
-    print(cur_obs)
+    #print(cur_obs)
     done = False
     while not done:
         action = agent.getAction(cur_obs)
@@ -107,7 +108,7 @@ def start_episode(agent: BlackjackRLAgent):
                 agent_count = agent_hand.count
                 hasAce = (agent_hand.aces > 0) 
                 next_obs = (agent_count, dealer_card, hasAce)
-                print("Hit: ", next_obs)
+                #print("Hit: ", next_obs)
                 if agent_hand.count > 21: 
                     done = True
                     reward = -2
@@ -117,7 +118,7 @@ def start_episode(agent: BlackjackRLAgent):
                 cur_obs = next_obs
             case "stand":
                 done = True
-                print("Stand: ", cur_obs)
+                #print("Stand: ", cur_obs)
                 while (dealer_hand.count < 17 or (dealer_hand.count == 17 and dealer_hand.aces > 0)):
                     random_card = np.random.choice(deck)
                     dealer_hand.addCard(random_card)
@@ -216,7 +217,11 @@ if __name__ == "__main__":
 
     agent = BlackjackRLAgent(learning_rate, epsilon_start, epsilon_decay, final_epsilon, discount)
 
-    #for episode in tqdm(range(num_episodes)):
-    start_episode(agent)
+    for episode in tqdm(range(num_episodes)):
+        start_episode(agent)
 
+    for key in agent.q_table:
+        if key[0] >= 12 and key[0] <= 20:
+            action = "hit" if agent.q_table[key]["hit"] >= agent.q_table[key]["stand"] else "stand"
+            print(key, ": ", action)
     print("Finished training!")
