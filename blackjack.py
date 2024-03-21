@@ -2,7 +2,8 @@ from collections import defaultdict
 import numpy as np
 import random
 from tqdm import tqdm
-import matplotlib as plt
+import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 
 class Hand:
     def __init__(self):
@@ -27,7 +28,7 @@ class Hand:
             self.count -= 10
 
 def Qstart():
-    return {"hit": 0, "stand": 0}
+    return [0, 0]
 
 class BlackjackRLAgent:
     def __init__(
@@ -44,25 +45,26 @@ class BlackjackRLAgent:
         self.final_epsilon = final_epsilon
         self.discount = discount
 
-        self.q_table = defaultdict(Qstart)
+        self.q_table = defaultdict(Qstart) # 0 = hit, 1 = stand
 
     def getAction(self, obs: tuple[int, int, bool]):
         if np.random.random() < self.epsilon:
-            return np.random.choice(list(self.q_table[obs].keys()))
+            choices = len(self.q_table[obs])
+            return np.random.randint(0, choices)
         else:
             maxQValue = float('-inf')
             retAction = None
-            for action in self.q_table[obs]:
-                if self.q_table[obs][action] > maxQValue:
-                    maxQValue = self.q_table[obs][action]
+            for action, Qvalue in enumerate(self.q_table[obs]):
+                if Qvalue > maxQValue:
+                    maxQValue = Qvalue
                     retAction = action
             return retAction
         
     def update(self, obs, action, next_obs, reward, isDone):
         maxQValue = float('-inf')
-        for act in self.q_table[next_obs]:
-            if self.q_table[next_obs][act] > maxQValue:
-                maxQValue = self.q_table[next_obs][act]
+        for Qvalue in self.q_table[next_obs]:
+            if Qvalue > maxQValue:
+                maxQValue = Qvalue
         futureQvalue = int(not isDone) * maxQValue
         sample = reward + self.discount * futureQvalue
         #print("sample: ", sample)
@@ -102,7 +104,7 @@ def start_episode(agent: BlackjackRLAgent):
     while not done:
         action = agent.getAction(cur_obs)
         match action:
-            case "hit":
+            case 0: #hit
                 random_card = np.random.choice(deck)
                 agent_hand.addCard(random_card)
                 agent_count = agent_hand.count
@@ -116,7 +118,7 @@ def start_episode(agent: BlackjackRLAgent):
                     reward = 0
                 agent.update(cur_obs, action, next_obs, reward, done)
                 cur_obs = next_obs
-            case "stand":
+            case 1: #stand
                 done = True
                 #print("Stand: ", cur_obs)
                 while (dealer_hand.count < 17 or (dealer_hand.count == 17 and dealer_hand.aces > 0)):
@@ -130,6 +132,62 @@ def start_episode(agent: BlackjackRLAgent):
                     reward = 0
                 agent.update(cur_obs, action, cur_obs, reward, done)
     agent.decay_epsilon()
+
+def create_grid(agent: BlackjackRLAgent, usable_ace):
+    policy = defaultdict(int)
+
+    for obs, QvalueList in agent.q_table.items():
+        action = None
+        maxQvalue = float('-inf')
+        for act, Qvalue in enumerate(QvalueList):
+            if Qvalue > maxQvalue:
+                maxQvalue = Qvalue
+                action = act
+        policy[obs] = action
+
+    dealer_count, player_count = np.meshgrid(np.arange(2,12), np.arange(17,7,-1))
+
+    policy_grid = np.apply_along_axis(
+        lambda obs: policy[(obs[0], obs[1], usable_ace)],
+        axis=2,
+        arr=np.dstack([player_count, dealer_count]),
+    )
+
+    return policy_grid
+
+def create_plot(policy_grid):
+    fig, ax = plt.subplots()
+
+    color_map = {
+        0: np.array([255, 255, 255]),
+        1: np.array([239, 197, 25])
+    }
+    policy_color = np.ndarray(shape=(policy_grid.shape[0], policy_grid.shape[1], 3), dtype=int)
+    for i in range(policy_grid.shape[0]):
+        for j in range(policy_grid.shape[1]):
+            policy_color[i][j] = color_map[policy_grid[i][j]]
+
+    ax.imshow(policy_color)
+
+    ax.set_xticks(list(range(10)), list(range(2, 11)) + ["A"])
+    ax.set_yticks(list(range(10)), list(range(17, 7, -1)))
+    ax.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
+    ax.set_xlabel("Dealer Upcard")
+    ax.xaxis.set_label_position('top')
+    ax.set_ylabel("Player sum")
+
+    for i in range(10):
+        for j in range(10):
+            text = ax.text(j, i, policy_grid[i, j], ha="center", va="center", color="black")
+    
+    legend_elements = [
+        Patch(facecolor="white", edgecolor="black", label="Hit"),
+        Patch(facecolor=(239/255, 197/255, 25/255), edgecolor="black", label="Stick"),
+    ]
+    ax.legend(handles=legend_elements, bbox_to_anchor=(1.3, 1))
+
+    fig.tight_layout()
+    plt.show()
 
 def play_blackjack():
     deck = {'A':4, '2':4, '3':4, '4':4, '5':4, '6':4, '7':4, '8':4, '9':4, '10':4, 'J':4, 'Q':4, 'K':4}
@@ -220,8 +278,6 @@ if __name__ == "__main__":
     for episode in tqdm(range(num_episodes)):
         start_episode(agent)
 
-    for key in agent.q_table:
-        if key[0] >= 12 and key[0] <= 20:
-            action = "hit" if agent.q_table[key]["hit"] >= agent.q_table[key]["stand"] else "stand"
-            print(key, ": ", action)
+    policy_grid = create_grid(agent, False)
+    create_plot(policy_grid)
     print("Finished training!")
