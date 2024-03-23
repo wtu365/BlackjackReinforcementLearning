@@ -34,12 +34,16 @@ class BlackjackRLAgent:
     def __init__(
             self,
             learning_rate,
+            learning_rate_decay,
+            final_learning_rate,
             epsilon,
             epsilon_decay,
             final_epsilon,
             discount
             ):
         self.learning_rate = learning_rate
+        self.learning_rate_decay = learning_rate_decay
+        self.final_learning_rate = final_learning_rate
         self.epsilon = epsilon
         self.epsilon_decay = epsilon_decay
         self.final_epsilon = final_epsilon
@@ -74,6 +78,9 @@ class BlackjackRLAgent:
 
     def decay_epsilon(self):
         self.epsilon = max(self.epsilon - self.epsilon_decay, self.final_epsilon)
+
+    def decay_learning(self):
+        self.learning_rate = max(self.learning_rate - self.learning_rate_decay, self.final_learning_rate)
 
 def start_episode(agent: BlackjackRLAgent):
     deck = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
@@ -132,8 +139,9 @@ def start_episode(agent: BlackjackRLAgent):
                     reward = 0
                 agent.update(cur_obs, action, cur_obs, reward, done)
     agent.decay_epsilon()
+    agent.decay_learning()
 
-def create_grid(agent: BlackjackRLAgent, usable_ace):
+def create_grid(agent: BlackjackRLAgent):
     policy = defaultdict(int)
 
     for obs, QvalueList in agent.q_table.items():
@@ -147,44 +155,71 @@ def create_grid(agent: BlackjackRLAgent, usable_ace):
 
     dealer_count, player_count = np.meshgrid(np.arange(2,12), np.arange(17,7,-1))
 
-    policy_grid = np.apply_along_axis(
-        lambda obs: policy[(obs[0], obs[1], usable_ace)],
+    policy_grid_noAce = np.apply_along_axis(
+        lambda obs: policy[(obs[0], obs[1], False)],
         axis=2,
         arr=np.dstack([player_count, dealer_count]),
     )
 
-    return policy_grid
+    dealer_count, player_count = np.meshgrid(np.arange(2,12), np.arange(20,12,-1))
 
-def create_plot(policy_grid):
-    fig, ax = plt.subplots()
+    policy_grid_Ace = np.apply_along_axis(
+        lambda obs: policy[(obs[0], obs[1], True)],
+        axis=2,
+        arr=np.dstack([player_count, dealer_count]),
+    )
+
+    return (policy_grid_noAce, policy_grid_Ace)
+
+def create_plot(grids):
+    fig, axs = plt.subplots(2, 1)
 
     color_map = {
         0: np.array([255, 255, 255]),
         1: np.array([239, 197, 25])
     }
-    policy_color = np.ndarray(shape=(policy_grid.shape[0], policy_grid.shape[1], 3), dtype=int)
-    for i in range(policy_grid.shape[0]):
-        for j in range(policy_grid.shape[1]):
-            policy_color[i][j] = color_map[policy_grid[i][j]]
 
-    ax.imshow(policy_color)
+    policy_color_noAce = np.ndarray(shape=(grids[0].shape[0], grids[0].shape[1], 3), dtype=int)
+    for i in range(grids[0].shape[0]):
+        for j in range(grids[0].shape[1]):
+            policy_color_noAce[i][j] = color_map[grids[0][i][j]]
 
-    ax.set_xticks(list(range(10)), list(range(2, 11)) + ["A"])
-    ax.set_yticks(list(range(10)), list(range(17, 7, -1)))
-    ax.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
-    ax.set_xlabel("Dealer Upcard")
-    ax.xaxis.set_label_position('top')
-    ax.set_ylabel("Player sum")
+    axs[0].imshow(policy_color_noAce)
+
+    axs[0].set_xticks(list(range(10)), list(range(2, 11)) + ["A"])
+    axs[0].set_yticks(list(range(10)), list(range(17, 7, -1)))
+    axs[0].tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
+    axs[0].set_xlabel("Dealer Upcard")
+    axs[0].xaxis.set_label_position('top')
+    axs[0].set_ylabel("Hard Totals")
 
     for i in range(10):
         for j in range(10):
-            text = ax.text(j, i, policy_grid[i, j], ha="center", va="center", color="black")
+            text = axs[0].text(j, i, grids[0][i, j], ha="center", va="center", color="black")
+
+    policy_color_Ace = np.ndarray(shape=(grids[1].shape[0], grids[1].shape[1], 3), dtype=int)
+    for i in range(grids[1].shape[0]):
+        for j in range(grids[1].shape[1]):
+            policy_color_Ace[i][j] = color_map[grids[1][i][j]]
+
+    axs[1].imshow(policy_color_Ace)
+
+    ytickslist = ["A," + str(i) for i in range(9, 1, -1)]
+
+    axs[1].set_xticks(list(range(10)), list(range(2, 11)) + ["A"])
+    axs[1].set_yticks(list(range(8)), ytickslist)
+    axs[1].tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
+    axs[1].set_ylabel("Soft Totals")
+
+    for i in range(8):
+        for j in range(10):
+            text = axs[1].text(j, i, grids[1][i, j], ha="center", va="center", color="black")
     
     legend_elements = [
         Patch(facecolor="white", edgecolor="black", label="Hit"),
-        Patch(facecolor=(239/255, 197/255, 25/255), edgecolor="black", label="Stick"),
+        Patch(facecolor=(239/255, 197/255, 25/255), edgecolor="black", label="Stand"),
     ]
-    ax.legend(handles=legend_elements, bbox_to_anchor=(1.3, 1))
+    fig.legend(handles=legend_elements, loc='upper right')
 
     fig.tight_layout()
     plt.show()
@@ -266,18 +301,20 @@ def play_blackjack():
         return
         
 if __name__ == "__main__":
-    learning_rate = 0.01
-    num_episodes = 100000
+    num_episodes = 1000000
+    learning_rate_start = 0.1
+    learning_rate_decay = learning_rate_start / num_episodes
+    final_learning_rate = 0.001
     discount = 0.99
     epsilon_start = 1.0
     final_epsilon = 0.1
     epsilon_decay = epsilon_start / (num_episodes / 2)
 
-    agent = BlackjackRLAgent(learning_rate, epsilon_start, epsilon_decay, final_epsilon, discount)
+    agent = BlackjackRLAgent(learning_rate_start, learning_rate_decay, final_learning_rate, epsilon_start, epsilon_decay, final_epsilon, discount)
 
     for episode in tqdm(range(num_episodes)):
         start_episode(agent)
 
-    policy_grid = create_grid(agent, False)
-    create_plot(policy_grid)
+    grids = create_grid(agent)
+    create_plot(grids)
     print("Finished training!")
