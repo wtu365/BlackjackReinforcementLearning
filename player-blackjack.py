@@ -3,13 +3,15 @@ import random
 class Hand:
     def __init__(self):
         self.cards = []
-        self.aces = 0
+        self.softaces = 0
+        self.hardaces = 0
         self.count = 0
+        self.numSplit = 0
 
     def addCard(self, card):
         self.cards.append(card)
         if card == 'A':
-            self.aces += 1
+            self.hardaces += 1
             self.count += 11
         
         elif card == 'J' or card == 'Q' or card == 'K':
@@ -18,22 +20,48 @@ class Hand:
         else:
             self.count += int(card)
 
-        if self.count > 21 and self.aces > 0:
-            self.aces -= 1
+        if self.count > 21 and self.hardaces > 0:
+            self.hardaces -= 1
+            self.softaces += 1
+            self.count -= 10
+    
+    def removeCard(self):
+        card = self.cards.pop()
+
+        if card == 'A':
+            if self.softaces > 0:
+                self.softaces -= 1
+                self.count -= 1
+            else:
+                self.hardaces -= 1
+                self.count -= 11
+
+        elif card == 'J' or card == 'Q' or card == 'K':
             self.count -= 10
 
-def play_blackjack():
-    deck = {'A':4, '2':4, '3':4, '4':4, '5':4, '6':4, '7':4, '8':4, '9':4, '10':4, 'J':4, 'Q':4, 'K':4}
-    player = Hand()
-    dealer = Hand()
+        else:
+            self.count -= int(card)
 
-    for i in range(2):
+def getCardValue(card: str) -> int:
+    if card == 'A':
+        return 11
+    elif card == 'J' or card == 'Q' or card == 'K':
+        return 10
+    else:
+        return int(card)
+
+def play_blackjack(player_hand: Hand, dealer_hand: Hand):
+    deck = {'A':24, '2':24, '3':24, '4':24, '5':24, '6':24, '7':24, '8':24, '9':24, '10':24, 'J':24, 'Q':24, 'K':24}
+    player = player_hand
+    dealer = dealer_hand
+
+    while len(player.cards) < 2:
         random_card = random.choice(list(deck.keys()))
         player.addCard(random_card)
         deck[random_card] -= 1
         if deck[random_card] == 0:
             deck.pop(random_card)
-    for i in range(2):
+    while len(dealer.cards) < 2:
         random_card = random.choice(list(deck.keys()))
         dealer.addCard(random_card)
         deck[random_card] -= 1
@@ -41,7 +69,10 @@ def play_blackjack():
             deck.pop(random_card)
     
     player_action = ""
-    actions = ["hit", "stand"]
+    actions = ["hit", "stand", "double", "surrender"]
+
+    if (getCardValue(player.cards[0]) == getCardValue(player.cards[1])):
+        actions.append("split")
 
     print("Player: ")
     print(player.cards)
