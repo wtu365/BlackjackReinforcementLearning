@@ -45,6 +45,17 @@ def play_blackjack():
 
     print("Player: ")
     print(player.cards)
+    
+    if len(dealer.cards) == 2 and dealer.count == 21:
+        print("Dealer Blackjack: ")
+        print(dealer.cards)
+        if len(player.cards) == 2 and player.count == 21:
+            print("Both you and the dealer have a blackjack, so it is a tie!")
+            return
+        else:
+            print("Unfortunately, the dealer has a blackjack and you do not. You lose!") 
+            return
+
     print("Dealer Card: ")
     print(dealer.cards[1])
 
