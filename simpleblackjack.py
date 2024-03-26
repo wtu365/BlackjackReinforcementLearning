@@ -107,6 +107,12 @@ def start_episode(agent: BlackjackRLAgent):
     cur_obs = (agent_count, dealer_card, hasAce)
     #print(cur_obs)
     done = False
+    if len(dealer_hand.cards) == 2 and dealer_hand.count == 21:
+        done = True
+
+    if len(agent_hand.cards) == 2 and agent_hand.count == 21:
+        done = True
+
     while not done:
         action = agent.getAction(cur_obs)
         match action:
@@ -225,10 +231,10 @@ def create_plot(grids):
         
 if __name__ == "__main__":
     num_episodes = 1000000
-    learning_rate_start = 0.1
+    learning_rate_start = 0.01
     learning_rate_decay = learning_rate_start / num_episodes
     final_learning_rate = 0.001
-    discount = 0.99
+    discount = 0.95
     epsilon_start = 1.0
     final_epsilon = 0.1
     epsilon_decay = epsilon_start / (num_episodes / 2)

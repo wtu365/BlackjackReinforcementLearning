@@ -6,7 +6,6 @@ class Hand:
         self.softaces = 0
         self.hardaces = 0
         self.count = 0
-        self.numSplit = 0
 
     def addCard(self, card):
         self.cards.append(card)

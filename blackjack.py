@@ -10,7 +10,6 @@ class Hand:
         self.softaces = 0
         self.hardaces = 0
         self.count = 0
-        self.numSplit = 0
 
     def addCard(self, card):
         self.cards.append(card)
@@ -54,8 +53,21 @@ def getCardValue(card: str) -> int:
     else:
         return int(card)
 
-def Qstart():
-    return [0, 0]
+def Qstart(obs: tuple[int, int, bool, bool, int]):
+    array = [0, 0]
+    if obs[3]:
+        array.extend([0, 0])
+    if obs[4] != None:
+        array.append(0)
+    return array
+
+class keydefaultdict(defaultdict): # Subclass for defaultdict in order to be able to create different sized lists for different states.
+    def __missing__(self, key):
+        if self.default_factory is None:
+            raise KeyError(key)
+        else:
+            ret = self[key] = self.default_factory(key)
+            return ret
 
 class BlackjackRLAgent:
     def __init__(
@@ -76,7 +88,7 @@ class BlackjackRLAgent:
         self.final_epsilon = final_epsilon
         self.discount = discount
 
-        self.q_table = defaultdict(Qstart) # 0 = hit, 1 = stand
+        self.q_table = keydefaultdict(Qstart) # 0 = hit, 1 = stand, 2 = double, 3 = surrender, 4 = split
 
     def getAction(self, obs: tuple[int, int, bool]):
         if np.random.random() < self.epsilon:
@@ -109,21 +121,26 @@ class BlackjackRLAgent:
     def decay_learning(self):
         self.learning_rate = max(self.learning_rate - self.learning_rate_decay, self.final_learning_rate)
 
-def start_episode(agent: BlackjackRLAgent):
+def start_episode(agent: BlackjackRLAgent, agent_start_hand: Hand, dealer_start_hand: Hand, isSplitHand: bool):
     deck = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
-    agent_hand = Hand()
-    dealer_hand = Hand()
+    agent_hand = agent_start_hand
+    dealer_hand = dealer_start_hand
 
-    for i in range(2):
+    while len(agent_hand.cards) < 2:
         random_card = np.random.choice(deck)
         agent_hand.addCard(random_card)
-    for i in range(2):
+    while len(dealer_hand.cards) < 2:
         random_card = np.random.choice(deck)
         dealer_hand.addCard(random_card)
 
     agent_count = agent_hand.count
     dealer_card = dealer_hand.cards[1]
-    hasAce = (agent_hand.aces > 0) 
+    hasAce = (agent_hand.softaces > 0) 
+    canDouble_Surrender = True
+    if (getCardValue(agent_hand.cards[0]) == getCardValue(agent_hand.cards[1])):
+        canSplit = getCardValue(agent_hand.cards[0])
+    else:
+        canSplit = None
 
     if dealer_card == 'A':
         dealer_card = 11
@@ -132,18 +149,33 @@ def start_episode(agent: BlackjackRLAgent):
     else:
         dealer_card = int(dealer_card)
 
-    cur_obs = (agent_count, dealer_card, hasAce)
+    cur_obs = (agent_count, dealer_card, hasAce, canDouble_Surrender, canSplit)
     #print(cur_obs)
     done = False
+    reward = 0
+
+    if len(dealer_hand.cards) == 2 and dealer_hand.count == 21:
+        done = True
+        if len(agent_hand.cards) == 2 and agent_hand.count == 21:
+            reward = 0
+        else:
+            reward = -2
+
+    if len(agent_hand.cards) == 2 and agent_hand.count == 21:
+        done = True
+        reward = 3
+
     while not done:
-        action = agent.getAction(cur_obs)
+        action = agent.getAction(cur_obs) # 0 = hit, 1 = stand, 2 = double, 3 = surrender, 4 = split
         match action:
             case 0: #hit
                 random_card = np.random.choice(deck)
                 agent_hand.addCard(random_card)
                 agent_count = agent_hand.count
-                hasAce = (agent_hand.softaces > 0) 
-                next_obs = (agent_count, dealer_card, hasAce)
+                hasAce = (agent_hand.softaces > 0)
+                canDouble_Surrender = False
+                canSplit = None
+                next_obs = (agent_count, dealer_card, hasAce, canDouble_Surrender, canSplit)
                 #print("Hit: ", next_obs)
                 if agent_hand.count > 21: 
                     done = True
@@ -155,7 +187,7 @@ def start_episode(agent: BlackjackRLAgent):
             case 1: #stand
                 done = True
                 #print("Stand: ", cur_obs)
-                while (dealer_hand.count < 17 or (dealer_hand.count == 17 and dealer_hand.aces > 0)):
+                while (dealer_hand.count < 17 or (dealer_hand.count == 17 and dealer_hand.softaces > 0)):
                     random_card = np.random.choice(deck)
                     dealer_hand.addCard(random_card)
                 if (dealer_hand.count > 21 or dealer_hand.count < agent_hand.count):
@@ -165,25 +197,59 @@ def start_episode(agent: BlackjackRLAgent):
                 else:
                     reward = 0
                 agent.update(cur_obs, action, cur_obs, reward, done)
+            case 2: #double
+                done = True
+                random_card = np.random.choice(deck)
+                agent_hand.addCard(random_card)
+                if agent_hand.count > 21: 
+                    reward = -4
+                else:
+                    while (dealer_hand.count < 17 or (dealer_hand.count == 17 and dealer_hand.softaces > 0)):
+                        random_card = np.random.choice(deck)
+                        dealer_hand.addCard(random_card)
+                    if (dealer_hand.count > 21 or dealer_hand.count < agent_hand.count):
+                        reward = 4
+                    elif (dealer_hand.count > agent_hand.count):
+                        reward = -4
+                    else:
+                        reward = 0
+                agent.update(cur_obs, action, cur_obs, reward, done)
+            case 3: #surrender
+                if isSplitHand:
+                    continue
+                done = True
+                reward = -1
+                agent.update(cur_obs, action, cur_obs, reward, done)
+            case 4: #split
+                if agent_hand.cards[1] == 'A':
+                    pass
+                done = True
+                split_hand = Hand()
+                split_hand.addCard(agent_hand.cards[1])
+                agent_hand.removeCard()
+                reward = start_episode(agent, agent_hand, dealer_hand, True) + start_episode(agent, split_hand, dealer_hand, True)
+                agent.update(cur_obs, action, cur_obs, reward, done)
+    if isSplitHand:
+        return reward
     agent.decay_epsilon()
     agent.decay_learning()
 
 def create_grid(agent: BlackjackRLAgent):
-    policy = defaultdict(int)
+    policy_nosur_nosplit = defaultdict(int)
 
     for obs, QvalueList in agent.q_table.items():
         action = None
         maxQvalue = float('-inf')
         for act, Qvalue in enumerate(QvalueList):
-            if Qvalue > maxQvalue:
+            if Qvalue > maxQvalue and act < 3:
                 maxQvalue = Qvalue
                 action = act
-        policy[obs] = action
+        policy_nosur_nosplit[obs] = action
 
     dealer_count, player_count = np.meshgrid(np.arange(2,12), np.arange(17,7,-1))
 
     policy_grid_noAce = np.apply_along_axis(
-        lambda obs: policy[(obs[0], obs[1], False)],
+        lambda obs: policy_nosur_nosplit[(obs[0], obs[1], False, True, None)],
         axis=2,
         arr=np.dstack([player_count, dealer_count]),
     )
@@ -191,7 +257,7 @@ def create_grid(agent: BlackjackRLAgent):
     dealer_count, player_count = np.meshgrid(np.arange(2,12), np.arange(20,12,-1))
 
     policy_grid_Ace = np.apply_along_axis(
-        lambda obs: policy[(obs[0], obs[1], True)],
+        lambda obs: policy_nosur_nosplit[(obs[0], obs[1], True, True, None)],
         axis=2,
         arr=np.dstack([player_count, dealer_count]),
     )
@@ -203,7 +269,8 @@ def create_plot(grids):
 
     color_map = {
         0: np.array([255, 255, 255]),
-        1: np.array([239, 197, 25])
+        1: np.array([239, 197, 25]),
+        2: np.array([36, 182, 112])
     }
 
     policy_color_noAce = np.ndarray(shape=(grids[0].shape[0], grids[0].shape[1], 3), dtype=int)
@@ -253,10 +320,10 @@ def create_plot(grids):
         
 if __name__ == "__main__":
     num_episodes = 1000000
-    learning_rate_start = 0.1
+    learning_rate_start = 0.01
     learning_rate_decay = learning_rate_start / num_episodes
     final_learning_rate = 0.001
-    discount = 0.99
+    discount = 0.95
     epsilon_start = 1.0
     final_epsilon = 0.1
     epsilon_decay = epsilon_start / (num_episodes / 2)
@@ -264,7 +331,7 @@ if __name__ == "__main__":
     agent = BlackjackRLAgent(learning_rate_start, learning_rate_decay, final_learning_rate, epsilon_start, epsilon_decay, final_epsilon, discount)
 
     for episode in tqdm(range(num_episodes)):
-        start_episode(agent)
+        start_episode(agent, Hand(), Hand(), False)
 
     grids = create_grid(agent)
     create_plot(grids)

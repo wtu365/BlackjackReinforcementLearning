@@ -6,6 +6,11 @@ This project was meant to learn more about the process of Q-value Reinforcement 
 
 <img src="/images/BJA_Basic_Strategy.png" width="500" />
 
+Blackjack Rules I'm using:
 
+- Dealer hits on a soft 17
+- DAS (Double After Split) is allowed
+- Late surrender is offered
+- Blackjack is a 3 to 2 reward
 
 
