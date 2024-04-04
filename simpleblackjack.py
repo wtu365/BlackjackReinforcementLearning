@@ -107,6 +107,7 @@ def start_episode(agent: BlackjackRLAgent):
     cur_obs = (agent_count, dealer_card, hasAce)
     #print(cur_obs)
     done = False
+
     if len(dealer_hand.cards) == 2 and dealer_hand.count == 21:
         done = True
 
@@ -234,7 +235,7 @@ if __name__ == "__main__":
     learning_rate_start = 0.01
     learning_rate_decay = learning_rate_start / num_episodes
     final_learning_rate = 0.001
-    discount = 0.95
+    discount = 0.99
     epsilon_start = 1.0
     final_epsilon = 0.1
     epsilon_decay = epsilon_start / (num_episodes / 2)
